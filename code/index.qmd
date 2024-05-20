@@ -1,0 +1,282 @@
+---
+title: "Vegation Cover and Climate Change"
+execute:
+  echo: false
+---
+
+Changes in surface vegetation and climate observations profoundly reflect the process of climate change. Through forty years of observations at Natural Bridges National Monument, I can visualize the effects of climate change. In this note, I will combine these observations to explore the effects of climate change on the park's ecosystem in a variety of ways, including vegetation change, temperature, and precipitation. These analyses will help to better understand the long-term effects of climate change on Natural Bridges National Monument and inform future ecological conservation measures.
+
+```{python}
+import pandas as pd
+df_history = pd.read_csv('NABR_historic.csv')
+df_NT = pd.read_csv('nearterm_data_2020-2024.csv')
+
+df_history = df_history.drop_duplicates()
+df_NT = df_NT.drop_duplicates()
+grouped_NT = df_NT.groupby(['long', 'lat', 'year']).agg(lambda x: list(x)).reset_index()
+col_list = ['DrySoilDays_Summer_whole', 'Evap_Summer', 'ExtremeShortTermDryStress_Summer_whole', 'FrostDays_Winter',
+            'NonDrySWA_Summer_whole', 'Tmin_Winter','VWC_Winter_whole','VWC_Spring_whole','VWC_Summer_whole','VWC_Fall_whole']
+NT_grouped = df_NT.copy()
+for col in col_list:
+    NT_grouped[col] = NT_grouped.groupby(['long', 'lat', 'year', 'scenario'])[col].transform('first')
+
+NT_grouped.dropna(subset=['PPT_Winter','PPT_Summer','PPT_Annual','T_Winter','T_Summer','T_Annual','Tmax_Summer'], how='all', inplace=True)
+
+```
+
+## Changes of Vegetation Cover Types in the Area
+
+As a statistic that visualizes changes in the vegetation cover of a region, let us first focus on the changes in the percentage of different vegetation cover types over the 40-year period from 1980 to 2021.
+
+```{python}
+his_plot1 = df_history.select_dtypes(exclude=['object']).groupby(['long', 'lat', 'year']).mean().reset_index()
+NT_plot1 = df_NT.select_dtypes(exclude=['object']).groupby(['long', 'lat', 'year']).mean().reset_index()
+df_plot1 = pd.concat([his_plot1, NT_plot1], axis=0)
+year_selected = [1980, 1990, 2000, 2010, 2021]
+df_plot1 = df_plot1[df_plot1['year'].isin(year_selected)]
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Create heat layer for each feature
+def heat_layer(data, feature, year):
+    return data[data['year'] == year][['lat', 'long', feature]]
+
+# Choose initial feature and year
+feature_list_plot1 = ['treecanopy', 'Ann_Herb', 'Bare', 'Herb', 'Litter', 'Shrub']
+years = [1980, 1990, 2000, 2010, 2021]
+
+initial_feature = feature_list_plot1[0]
+initial_year = years[0]
+
+# Get global min and max for color scale
+global_min = df_plot1[feature_list_plot1].min().min()
+global_max = df_plot1[feature_list_plot1].max().max()
+# Create heatmap
+heatmap_data = df_plot1[df_plot1['year'] == years[0]][['lat', 'long', feature_list_plot1[0]]]
+fig = px.density_mapbox(
+    heatmap_data,
+    lat='lat',
+    lon='long',
+    z=feature_list_plot1[0],
+    radius=10,
+    center=dict(lat=df_plot1['lat'].mean(), lon=df_plot1['long'].mean()),
+    zoom=10.5, 
+    mapbox_style="open-street-map",
+    color_continuous_scale='aggrnyl_r',
+    #range_color=[global_min, global_max]
+)
+
+# Buttons for selecting features
+buttons = []
+for feature in feature_list_plot1:
+    buttons.append(
+        dict(
+            args=[
+                {'z': [df_plot1[df_plot1['year'] == initial_year][feature]]
+                },
+                {'coloraxis': {'colorscale': 'aggrnyl_r'}}
+            ],
+            label=feature.replace("_", " ").capitalize(),
+            method='restyle'
+        )
+    )
+
+updatemenus = [
+    dict(
+        buttons=buttons,
+        direction="down",
+        showactive=True,
+        x=0,
+        xanchor="left",
+        y=1,
+        yanchor="top"
+    )
+]
+
+# Year slider
+sliders = [
+    dict(
+        active=0,
+        currentvalue={"prefix": "Year: "},
+        pad={"b": 50},
+        steps=[{
+            "args": [[str(year)], {"frame": {"duration": 500, "redraw": True}, "mode": "immediate"}],
+            "label": str(year),
+            "method": "animate"
+        } for year in years]
+    )
+]
+
+fig.update_layout(
+    title_text='Changes of Vegetation Cover (1980-2021)',
+    coloraxis_colorbar=dict(title='Percentage'),
+    updatemenus=updatemenus,
+    sliders=sliders,
+    mapbox=dict(
+        center=dict(lat=df_plot1['lat'].mean(), lon=df_plot1['long'].mean()),
+        zoom=10.5 
+    )
+)
+
+frames = []
+for year in years:
+    for feature in feature_list_plot1:
+        frames.append(
+            go.Frame(
+                data=[go.Densitymapbox(
+                    lat=heat_layer(df_plot1, feature, year)['lat'],
+                    lon=heat_layer(df_plot1, feature, year)['long'],
+                    z=heat_layer(df_plot1, feature, year)[feature],
+                    radius=10,
+                    colorscale='aggrnyl_r',
+                    zmin=global_min,
+                    zmax=global_max
+                )],
+                name=str(year)
+            )
+        )
+
+fig.frames = frames
+
+fig.show()
+```
+
+Over the past 40 years, we observed that the proportion of different landforms has remained largely stable. This means that, despite some changes in climate, the distribution of various types of plants has not changed significantly. The stability of the terrain is the key factor that allows the distribution of plants to be maintained in a relatively balanced state. Whether it is mountains, plains or river valleys, the constancy of topographic features provides plants with a continuous growing environment. This stable geographical condition ensures the continuity of plant communities and the stability of ecosystems, thus counteracting the potential impacts of climate change. This also reflects the dominant role of topography in plant distribution, as topographic stability supports the robust development of plant communities even when the climate fluctuates.
+
+## Changes of Extreme Dry Stress
+
+Extreme weather is one of the sensitive indicators of climate change, reflecting changes in the dynamics of the atmospheric system. Data records of unusually dry summers can reveal shifts in climate patterns, possibly due to changes in precipitation patterns or the influence of environmental factors. By continuously monitoring and analyzing these extreme weather events, we can better understand the evolutionary trends of the climate system.
+
+```{python}
+df_plot2 = df_plot1.copy()
+fig = px.scatter_mapbox(
+    df_plot2, 
+    lat='lat', 
+    lon='long', 
+    size='ExtremeShortTermDryStress_Summer_whole', 
+    color='ExtremeShortTermDryStress_Summer_whole',
+    animation_frame='year', 
+    mapbox_style="open-street-map",
+    color_continuous_scale="sunset_r",
+    title="Extreme Short Term Dry Stress in Summer",
+    size_max=10,
+    zoom=10
+)
+
+# Set up map center and zoom
+fig.update_layout(mapbox_center={"lat": df_plot2['lat'].mean(), "lon": df_plot2['long'].mean()}, mapbox_zoom=10)
+
+# Set up slider
+fig.update_layout(sliders=[{
+        'active': 0,
+        'currentvalue': {
+            "prefix": "Year: ",
+            "font": {"size": 15, "color": "black"},
+            "visible": True
+        },
+        'steps': [{
+            'label': str(year),
+            'method': 'animate',
+            'args': [[str(year)], {'mode': 'immediate', 'frame': {'duration': 300, 'redraw': True}, 'transition': {'duration': 300}}]
+        } for year in sorted(df_plot2['year'].unique())]
+    }]
+
+)
+# Set up hover template
+fig.update_traces(
+    hovertemplate='<br><b>Latitude</b>: %{lat}<br><b>Longitude</b>: %{lon}<br><b>Year</b>: %{customdata[0]}<br><b>Dry Stress</b>: %{marker.size}'
+)
+fig.update_traces(customdata=df_plot2[['year']])
+
+# Set up colorbar
+fig.update_layout(coloraxis_colorbar=dict(
+    title="Dry Stress",
+    tickvals=[df_plot2['ExtremeShortTermDryStress_Summer_whole'].min(), df_plot2['ExtremeShortTermDryStress_Summer_whole'].max()],
+    ticktext=[df_plot2['ExtremeShortTermDryStress_Summer_whole'].min().round(2), df_plot2['ExtremeShortTermDryStress_Summer_whole'].max().round(2)],
+    
+))
+fig.show()
+```
+
+```{python}
+import altair as alt
+
+df_1980 = df_plot2[df_plot2['year'] == 1980]
+df_2021 = df_plot2[df_plot2['year'] == 2021]
+
+df_plot2_2 = pd.merge(df_1980, df_2021, on=['long', 'lat'], suffixes=('_1980', '_2021'))
+df_plot2_2['compare'] = df_plot2_2['ExtremeShortTermDryStress_Summer_whole_2021'] - df_plot2_2['ExtremeShortTermDryStress_Summer_whole_1980']
+
+worse = df_plot2_2[df_plot2_2['compare'] > 0].shape[0]
+better = df_plot2_2[df_plot2_2['compare'] < 0].shape[0]
+stable = df_plot2_2[df_plot2_2['compare'] == 0].shape[0]
+
+worse_percentage = round(worse / df_plot2_2.shape[0] * 100,2)
+better_percentage = round(better / df_plot2_2.shape[0] * 100,2)
+stable_percentage = round(stable / df_plot2_2.shape[0] * 100,2)
+
+df_plot2_chart = pd.DataFrame({'Comparison': ['Better', 'Worse',  'Stable'], 
+                               'Count': [better, worse, stable],
+                               'Percentage': [better_percentage, worse_percentage,  stable_percentage]})
+
+fig = px.pie(
+    df_plot2_chart, values='Count', names='Comparison', title='Proportion of Extreme Dry Comparison between 1980 and 2021'
+)
+fig.update_traces(
+    hovertemplate='<br><b>Comparison</b>: %{label}<br><b>Count</b>: %{value}<br><b>Proportion</b>: %{customdata[0]}%',
+    marker=dict(colors=px.colors.qualitative.Set2)
+)
+fig.update_traces(customdata=df_plot2_chart[['Percentage']])
+fig.show()
+```
+
+Using the heatmap and pie charts, we can see that the level of extreme summer surface drought has improved significantly over time during these 40 years. This suggests that climate change is actually affecting the current improvement in soil conditions, favoring water retention and plant and animal growth. In addition, this trend reflects the role that ecological conservation measures may have played in mitigating the effects of climate extremes. Such improvements not only enhance the growing environment for plants, but also provide more stable habitats for animals, helping to maintain biodiversity.
+
+## Dominant Vegetation Type and Soil Change
+
+Soil changes are closely related to the dominant vegetation types in the region. Different soil conditions result in different vegetation types, which in turn influence the nature of the soil.
+
+```{python}
+df_plot3 = df_plot1.copy()
+dom = df_plot3[['treecanopy', 'Ann_Herb', 'Bare', 'Herb', 'Litter', 'Shrub']].idxmax(axis=1)
+name_map = {'treecanopy': 'Treecanopy',
+            'Ann_Herb': 'Annually Herb'}
+df_plot3['dominate'] = dom.replace(name_map)
+
+df_plot3_1980 = df_plot3[df_plot3['year'] == 1980]
+df_plot3_2021 = df_plot3[df_plot3['year'] == 2021]
+
+df3 = pd.merge(df_plot3_1980, df_plot3_2021, on=['long', 'lat'], suffixes=('_1980', '_2021'))
+df3['ExtremeDryCompare'] = df3['ExtremeShortTermDryStress_Summer_whole_2021'] - df3['ExtremeShortTermDryStress_Summer_whole_1980']
+
+df3['VWC_Summer_Compare'] = df3['VWC_Summer_whole_2021'] - df3['VWC_Summer_whole_1980']
+
+fig = px.scatter(df3, x = 'ExtremeDryCompare', y = 'VWC_Summer_Compare', color = 'dominate_1980',
+                title="Summer Soil Water Changes (1980-2021) and Vegetation Type",
+                color_discrete_sequence=px.colors.qualitative.Set2)
+fig.update_traces(customdata=df3[['dominate_1980']])
+fig.update_layout(
+    plot_bgcolor='rgba(0,0,0,0)',
+    legend_title_text='Dominant Type'
+)
+fig.update_xaxes(
+    zeroline=True, zerolinewidth=2, zerolinecolor='rgba(122,119,119,0.5)',
+    showgrid=False, gridcolor='white', gridwidth=2, title="Vol Water Content Difference",
+    range=[-2.1, 2.1]
+)
+fig.update_yaxes(
+    zeroline=True, zerolinewidth=2, zerolinecolor='rgba(122,119,119,0.5)',
+    showgrid=False, gridcolor='white', gridwidth=2, title ="Dry Stress Difference" ,
+    range=[-0.006, 0.006]
+)
+fig.update_traces(
+    hovertemplate='<br><b>Dominant Type</b>: %{customdata[0]}<br><b>Water Content Difference</b>: %{x}<br><b>Extreme Dry Difference</b>: %{y}')
+
+fig.show()
+```
+
+We can find that bare land experiences more drastic soil moisture changes than land covered mainly by shrub, which may bring about soil desertification. At the same time, other more favorable soil conditions promote the growth and spread of certain drought-tolerant plants, further enhancing the stability and diversity of the ecosystem. At the same time, improved vegetation in turn helps to maintain soil moisture and structure, creating a mutually reinforcing virtuous cycle that is conducive to overall ecosystem recovery and development. There is a complex interaction and dynamic equilibrium between soil and vegetation.
+
+## Conclusion
+
+From the above analysis, we can see that vegetation cover has been affected by some of the climate changes, with improved soil conditions favoring the growth of certain drought-tolerant plants. At the same time, we note that vegetation cover helps to maintain soil fertility and moisture content. Therefore, the park management needs to closely observe the dynamics of the vegetation cover and adjust the management strategy in time. At the same time, it is recommended that more drought-tolerant and water-retentive plants should be planted artificially on bare land to ensure the stability of the natural environment and to promote the healthy and sustainable development of the ecosystem. Through these measures, the resilience of the ecosystem and its ability to withstand environmental changes can be effectively improved.
